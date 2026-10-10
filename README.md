@@ -118,9 +118,10 @@ The workbench can connect to Redis at `redis:6379` over the Compose network.
 For larger multi-service capabilities, Compose `include` may be a better fit;
 there is no need to introduce a proprietary plugin manifest or generator.
 
-Compose's `extends` resolves referenced service paths and build contexts from
-the main Compose project directory. The workbench intentionally builds from
-the repository root to read `config/` while keeping code in `components/`.
+Compose `extends` resolves the reusable build context relative to the component
+file (`../..` is the repository root). The Dockerfile path is relative to this
+build context, allowing `config/` access without mixing build details into
+the user manifest.
 `.dockerignore` excludes `.env` and workspace data from the build context.
 
 ## Commands

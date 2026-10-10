@@ -14,6 +14,8 @@ profile name was changed to `cade-light-bwrap-workspace` (including peer rules),
 so these projects do not overwrite each other's host profile on shared hosts.
 **This does not prove compatibility with another host or SRT 0.0.79.**
 
+The overlay inherits `no-new-privileges:true` from the component service
+(duplicating it in the overlay makes Compose's security_opt merge invalid).
 The opt-in overlay changes three Docker security layers:
 - scoped seccomp allowances for Bubblewrap's namespace and mount operations;
 - a host-loaded, named AppArmor profile with Bubblewrap-specific allowances;

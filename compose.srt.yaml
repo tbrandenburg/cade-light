@@ -1,9 +1,9 @@
 # Opt-in SRT compatibility: requires a reviewed, host-loaded AppArmor profile.
 # See docs/SRT.md. Do not apply by default.
+# no-new-privileges:true remains inherited from the component service.
 services:
   workbench:
     security_opt:
-      - no-new-privileges:true
       - seccomp=./components/workbench/security/seccomp-bwrap-userns.json
       - apparmor=cade-light-bwrap-workspace
       - systempaths=unconfined
