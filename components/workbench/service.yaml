@@ -1,0 +1,12 @@
+# MAINTAINER-OWNED: reusable workbench defaults.
+# Paths resolve relative to the root Compose project when extended.
+services:
+  workbench:
+    build:
+      context: .
+      dockerfile: components/workbench/Dockerfile
+    image: cade-light/workbench:local
+    init: true
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true

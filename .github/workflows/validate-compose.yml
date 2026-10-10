@@ -1,0 +1,19 @@
+name: Validate Compose configuration
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate default and Redis profiles
+        run: |
+          cp .env.example .env
+          docker compose config --quiet
+          docker compose --profile redis config --quiet
+      - name: Check startup script syntax
+        run: bash -n components/workbench/start.sh

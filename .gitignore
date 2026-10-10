@@ -1,3 +1,4 @@
 .env
+compose.override.yaml
 workspace/*
 !workspace/.gitkeep
