@@ -1,0 +1,10 @@
+{
+  "name": "cade-light-palette",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Node-RED palette nodes installed at image build time",
+  "dependencies": {
+    "@flowfuse/node-red-dashboard": "1.33.0",
+    "@tbrandenburg/node-red-agents": "0.4.4"
+  }
+}

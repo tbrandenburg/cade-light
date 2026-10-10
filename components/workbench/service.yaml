@@ -1,0 +1,12 @@
+# MAINTAINER-OWNED: reusable workbench defaults.
+# The build context is relative to THIS file: ../.. is the repository root.
+services:
+  workbench:
+    build:
+      context: ../..
+      dockerfile: components/workbench/Dockerfile
+    image: cade-light/workbench:local
+    init: true
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true

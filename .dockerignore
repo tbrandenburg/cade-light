@@ -1,0 +1,10 @@
+# Root build context reads config/, but never copies user secrets/data.
+.env
+.env.*
+!.env.example
+workspace/
+.git/
+.github/
+compose.override.yaml
+**/__pycache__/
+**/.DS_Store

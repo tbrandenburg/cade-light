@@ -1,0 +1,44 @@
+{
+  "network": {
+    "allowedDomains": [
+      "github.com",
+      "*.github.com",
+      "api.github.com",
+      "copilot-proxy.githubusercontent.com",
+      "opencode.ai",
+      "*.opencode.ai",
+      "api.openai.com",
+      "api.anthropic.com"
+    ],
+    "deniedDomains": [],
+    "allowAllUnixSockets": false
+  },
+  "filesystem": {
+    "denyRead": [
+      "~/.ssh",
+      "~/.aws",
+      "~/.claude",
+      "~/.copilot",
+      ".env",
+      ".env.*",
+      "**/.env",
+      "**/.env.*",
+      "**/secrets/**"
+    ],
+    "allowWrite": [
+      "/workspace",
+      "/tmp",
+      "~/.local",
+      "~/.cache",
+      "~/.config",
+      "~/.npm"
+    ],
+    "denyWrite": [
+      ".env",
+      ".env.*",
+      "**/.env",
+      "**/.env.*",
+      "**/secrets/**"
+    ]
+  }
+}

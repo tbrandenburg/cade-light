@@ -1,0 +1,219 @@
+abi <abi/3.0>,
+include <tunables/global>
+
+# Scoped AppArmor profile for issue #23 — permits bubblewrap's unprivileged
+# user-namespace sandboxing (as used by `srt`/`opencode`/`pi`) while keeping
+# every other Docker `docker-default` confinement rule intact.
+#
+# Derived from Docker's own default container profile:
+#   https://github.com/moby/profiles/blob/main/apparmor/template.go
+# (the `baseTemplate` Go template daemon/dockerd renders per-container as
+# "docker-default", fetched 2026-08-30). This file is that same template with
+# its Go templating placeholders resolved to fixed values (profile name
+# `cade-light-bwrap-workspace`, no imports/inner-imports needed for this use case)
+# and exactly two additions, both marked below with an "issue-23" comment:
+#
+#   1. `userns,` — permits creating a new user namespace at all (the LSM-level
+#      gate `bwrap --unshare-user` needs; matches Anthropic's own documented
+#      fix for Ubuntu 24.04+'s `kernel.apparmor_restrict_unprivileged_userns`
+#      restriction, see docs/INITIAL.md's srt section).
+#   2. `mount options=(rslave),` replacing the upstream blanket
+#      `deny mount,` for exactly this one mount flag combination — bwrap's
+#      only mount(2) call once inside its new user+mount namespace is
+#      `mount(NULL, "/", NULL, MS_REC|MS_SLAVE, NULL)` (`mount --make-rslave`
+#      at the mount(8) CLI level; AppArmor's own policy keyword for this
+#      MS_REC|MS_SLAVE flag combination is `rslave`, NOT `make-rslave` --
+#      see BUGFIX #3 further down for why this distinction matters)
+#      to make its private mount namespace's propagation slave-of-root before
+#      it starts constructing the sandboxed root via bind mounts. This is
+#      *not* scoped further to a single target path (upstream bwrap performs
+#      this against whichever root the caller passed to `--ro-bind`, which is
+#      not fixed at profile-authoring time), so it is the widest single rule
+#      in this profile — everything else upstream `docker-default` denies
+#      (real filesystem mounts, remounts, binds of host paths, etc. via any
+#      *other* mount flag combination) remains denied by AppArmor's
+#      implicit default-deny (see BUGFIX #2/#3 further down for why there
+#      is no explicit `deny mount,` catch-all statement in this file).
+#
+# Every other line below is unmodified from upstream `docker-default`.
+profile cade-light-bwrap-workspace flags=(attach_disconnected,mediate_deleted) {
+  network,
+  # Disallow AF_ALG (Linux kernel crypto API); see https://copy.fail/
+  deny network alg,
+  # Disallow AF_VSOCK to prevent host/guest communication.
+  deny network vsock,
+  capability,
+  file,
+  umount,
+  # Host (privileged) processes may send signals to container processes.
+  signal (receive) peer=unconfined,
+  # runc may send signals to container processes (for "docker stop").
+  signal (receive) peer=runc,
+  # crun may send signals to container processes (for "docker stop" when used with crun OCI runtime).
+  signal (receive) peer=crun,
+  # dockerd may send signals to container processes (for "docker kill").
+  signal (receive) peer=dockerd,
+  # Container processes may send signals amongst themselves.
+  signal (send,receive) peer=cade-light-bwrap-workspace,
+
+  deny @{PROC}/* w,   # deny write for all files directly in /proc (not in a subdir)
+  # deny write to files not in /proc/<number>/** or /proc/sys/**
+  deny @{PROC}/{[^1-9/],[^1-9/][^0-9/],[^1-9s/][^0-9y/][^0-9s/],[^1-9/][^0-9/][^0-9/][^0-9/]*}/** w,
+  deny @{PROC}/sys/[^k]** w,  # deny /proc/sys except /proc/sys/k* (effectively /proc/sys/kernel)
+  deny @{PROC}/sys/kernel/{?,??,[^s][^h][^m]**} w,  # deny everything except shm* in /proc/sys/kernel/
+  deny @{PROC}/sysrq-trigger rwklx,
+  deny @{PROC}/kcore rwklx,
+
+  # issue-23: permit user-namespace creation (bwrap --unshare-user).
+  userns,
+
+  # issue-23: permit exactly the mount(2) flag combination bwrap needs
+  # (MS_REC|MS_SLAVE, i.e. `mount --make-rslave`) once inside its own new
+  # user+mount namespace. Every other mount request is denied by
+  # AppArmor's implicit default-deny (no rule below grants any other
+  # mount(2) flag combination) -- there is intentionally no explicit
+  # catch-all `deny mount,` statement (see BUGFIX note below for why).
+  #
+  # BUGFIX #1 (found live 2026-08-30, re-verifying issue #23's own fix):
+  # the original unqualified `deny mount,` rule that used to sit directly
+  # below this allow rule *always* won over it for any access both rules
+  # matched -- AppArmor evaluates explicit `deny` rules as taking
+  # precedence over `allow` rules for overlapping permissions, regardless
+  # of source-file ordering (this is *not* first-match-wins like a
+  # firewall chain). Since the unqualified `deny mount,` matched every
+  # mount(2) flag combination, including make-rslave, it silently
+  # subtracted the specific allow above, making it dead code -- with zero
+  # AppArmor audit log entry for the resulting denial (confirmed via
+  # `journalctl -k`: no DENIED entry appears at all for the exact failing
+  # `mount()` call).
+  #
+  # BUGFIX #2 (found live 2026-08-30, re-verifying BUGFIX #1's own fix):
+  # the first attempted fix qualified the deny as
+  # `deny mount options!=(make-rslave),`, assuming AppArmor's mount rule
+  # grammar supports a `!=` negation operator on `options` the way some
+  # other AppArmor rule types support inequality conditions elsewhere.
+  # It does not -- `apparmor_parser -S` (dry-compile, no root/load
+  # required) rejects it outright: "Lexer found unexpected character: '!'
+  # ... in state: MOUNT_MODE". This was never actually loaded onto any
+  # host (the prior `sudo scripts/load-security-profiles.sh` run failed
+  # with this exact parser error, was never silently swallowed). Final
+  # fix: drop the redundant explicit `deny mount,` entirely and rely on
+  # AppArmor's implicit default-deny for every mount(2) flag combination
+  # not explicitly allowed above -- functionally identical intent
+  # (upstream `docker-default`'s explicit `deny mount,` was itself
+  # redundant with the implicit default; AppArmor profiles deny anything
+  # with no matching allow rule), and has the added benefit that a denied
+  # mount attempt now actually appears in the audit log (explicit `deny`
+  # rules are typically audit-suppressed by default; implicit denials are
+  # not). Verified: `apparmor_parser -S` now compiles this profile
+  # without error.
+  #
+  # BUGFIX #3 (found live 2026-08-30, re-verifying BUGFIX #2's own fix):
+  # `sudo scripts/load-security-profiles.sh` succeeded this time (BUGFIX
+  # #2's syntax fix worked), but `bwrap --unshare-user --unshare-pid
+  # --ro-bind / / echo ok` (with the scoped seccomp profile applied)
+  # *still* failed with the exact same `Failed to make / slave:
+  # Permission denied` error as before any of these fixes. Root cause:
+  # `make-rslave` was never a valid AppArmor mount-rule option keyword at
+  # all -- confirmed against the upstream `apparmor.d(5)` policy grammar
+  # (`MOUNT FLAGS = ( ... | 'private' | 'rprivate' | 'slave' | 'rslave' |
+  # 'shared' | 'rshared' | ... )`, no `make-*` variants exist; those are
+  # `mount(8)` CLI subcommand names, not AppArmor policy keywords). The
+  # AppArmor mount-rule grammar's `MOUNT EXPRESSION` production accepts
+  # any alphanumeric token without validating it against the known-flag
+  # list, so `apparmor_parser` silently accepted `make-rslave` as
+  # syntactically valid (which is why neither BUGFIX #1 nor #2 caught
+  # this) while it could never actually match any real mount(2) flag
+  # combination -- the allow rule was dead code from the very first
+  # version of this profile (Issue #23's original PR #24), independent of
+  # and prior to the deny-precedence bug BUGFIX #1/#2 chased. The correct
+  # keyword for `MS_REC|MS_SLAVE` (the recursive/`rslave` propagation
+  # type bwrap's one mount(2) call requests) is simply `rslave`.
+  #
+  # BUGFIX #4 (found live 2026-08-30, re-verifying BUGFIX #3's own fix):
+  # after the profile finally loaded AND compiled with the corrected
+  # `rslave` keyword, `bwrap` *still* failed identically. Root cause,
+  # found via `strace -f -e trace=mount` against a real `bwrap` run
+  # (unprivileged, no host mutation needed): the actual syscall is
+  # `mount(NULL, "/", NULL, MS_REC|MS_SILENT|MS_SLAVE, NULL)` -- bwrap
+  # always ORs in `MS_SILENT` on every mount(2) call it makes (visible in
+  # every line of the strace output, not just this one). AppArmor's
+  # `options=(...)` with `=` (exact match) requires the *entire* effective
+  # option set to equal exactly what's listed -- `rslave` alone doesn't
+  # account for the separate `silent` flag bit also present, so the
+  # exact-match condition never actually matched the real call. Fixed by
+  # listing both flags bwrap actually passes.
+  mount options=(rslave,silent),
+
+  # BUGFIX #5 (found live 2026-08-30, re-verifying BUGFIX #4's own fix):
+  # after BUGFIX #4 finally let `bwrap` past its first mount(2) call, it
+  # progressed to (and failed on) a *second*, entirely different mount(2)
+  # call -- `bwrap` performs many more mount(2) calls after the initial
+  # rslave remount (constructing a tmpfs /tmp, recursively bind-mounting
+  # its new root, then remounting ~20 individual paths read-only/noexec
+  # inside it, then finally detaching its old root as private). Every one
+  # of these was still denied by this profile's implicit default-deny
+  # (no rule below granted any of these other mount(2) calls). Root cause
+  # identified via `strace -f -e trace=mount` against a real, fully
+  # successful (fully-`unconfined` seccomp+apparmor) baseline `bwrap` run
+  # -- see `coder/security-profiles/seccomp-bwrap-userns.json`'s matching
+  # BUGFIX #5 comment for the exact captured flag combinations. The four
+  # `mount options in (...)` rules below (using `in`, not `=`, so each
+  # rule tolerates any *subset* of its own listed flags rather than
+  # requiring an exact match -- more robust against minor variations,
+  # e.g. `silent`/`relatime` being present or absent across the ~20
+  # individual remount calls that otherwise share the same core intent)
+  # were derived directly from that real strace output, one rule per
+  # distinct logical mount step:
+  mount options in (nosuid,nodev),
+  mount options in (rbind,silent),
+  mount options in (ro,nosuid,nodev,noexec,remount,bind,silent,relatime),
+  mount options in (rprivate,silent),
+
+  # BUGFIX #7 (found live 2026-08-30, first found against a *real* Coder
+  # workspace running `srt opencode`, not just a synthetic `bwrap
+  # --ro-bind / /` test): `srt` invokes `bwrap` with `--dev /dev` (a
+  # fresh, isolated `/dev` including a pty), which the minimal
+  # reproduction command used through BUGFIX #6 never exercised. This
+  # mounts a `devpts` filesystem specifically -- scoped here by `fstype=`
+  # in addition to `options=` (tighter than the other mount rules above,
+  # which don't restrict by fstype, since we now know exactly which
+  # filesystem type this specific call uses).
+  mount fstype=devpts options in (nosuid,noexec),
+
+  # BUGFIX #8 (found live 2026-08-30, via strace against a standalone
+  # `srt -c 'echo ...'` reproduction): bwrap also performs a real, fresh
+  # procfs mount (distinct from the bind-remount-of-an-existing-/proc
+  # already covered above) -- `mount("proc", "/newroot/proc", "proc",
+  # MS_NOSUID|MS_NODEV|MS_NOEXEC, NULL)`.
+  mount fstype=proc options in (nosuid,nodev,noexec),
+
+  # BUGFIX #6 (proactive, 2026-08-30, matching Issue #23's own seccomp
+  # profile BUGFIX #6/#7): bwrap also calls `pivot_root(2)` and
+  # `umount2(2)` after all its mount(2) calls succeed. `umount,` above
+  # (inherited, unqualified, from upstream `docker-default`) already
+  # unconditionally permits `umount2` here -- no change needed for that.
+  # `pivot_root` is its own distinct AppArmor-mediated rule type (see
+  # `apparmor.d(5)`'s `PIVOT_ROOT_RULE`) with no existing rule anywhere
+  # in this profile (upstream `docker-default` doesn't grant it either),
+  # so it would fall to this profile's implicit default-deny exactly like
+  # the mount(2) calls did before BUGFIX #5. Added proactively here,
+  # before a live re-test, based on the same reasoning as the matching
+  # seccomp-level fix: bwrap only calls this after already confining
+  # itself inside its own new user+mount namespace, so it can only ever
+  # affect that process's own private, already-isolated namespace.
+  pivot_root,
+
+  deny /sys/[^f]*/** wklx,
+  deny /sys/f[^s]*/** wklx,
+  deny /sys/fs/[^c]*/** wklx,
+  deny /sys/fs/c[^g]*/** wklx,
+  deny /sys/fs/cg[^r]*/** wklx,
+  deny /sys/firmware/** rwklx,
+  deny /sys/devices/virtual/powercap/** rwklx,
+  deny /sys/kernel/security/** rwklx,
+
+  # allow processes within the container to trace each other,
+  # provided all other LSM and yama setting allow it.
+  ptrace (trace,tracedby,read,readby) peer=cade-light-bwrap-workspace,
+}

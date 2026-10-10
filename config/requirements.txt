@@ -1,0 +1,3 @@
+# USER-EDITABLE: extra packages in Jupyter's Python venv.
+# Example: pandas==2.3.2
+# Pin versions for reproducible rebuilds.
