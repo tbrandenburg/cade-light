@@ -14,8 +14,9 @@ No Coder control plane or Terraform is required.
 | `.env` (copied from `.env.example`) | Host-specific ports, passwords and tokens. Never commit secrets. |
 | `config/requirements.txt` | Extra Python packages installed into the Jupyter virtual environment on rebuild. |
 | `config/node-red/package.json` | Built-in and additional Node-RED palette nodes installed on rebuild. |
-| `config/srt-settings.json` | Example opt-in agent sandbox policy. |
+| `config/srt-settings.json` | User-editable allowlist and secret-path restrictions for SRT. |
 | `compose.override.yaml` (optional, Git-ignored) | Host-specific Compose overrides. |
+| `compose.srt.yaml` (explicit opt-in) | Select the host-dependent SRT-compatible Docker confinement mode. |
 
 **Normally do not edit these files as a user:**
 
@@ -25,6 +26,7 @@ No Coder control plane or Terraform is required.
 | `components/workbench/Dockerfile` | OS, language runtimes, core applications and image build logic. |
 | `components/workbench/start.sh` | Starts the three HTTP services and handles termination. |
 | `components/workbench/node-red-settings.js` | Node-RED runtime integration and palette discovery. |
+| `components/workbench/security/` | Scoped seccomp/AppArmor profiles, explicit host loader, sandbox smoke test. |
 | `Makefile` | Convenience commands only; not a second configuration language. |
 
 **Runtime data:** `workspace/` contains project files; the named `home` volume
@@ -61,17 +63,29 @@ Use OpenCode in the VS Code terminal or with:
 docker compose exec workbench opencode
 ```
 
-SRT is installed but **not** automatically applied to OpenCode. Verify that
-bubblewrap can create a sandbox under the host's Docker security policy
-before relying on it:
+SRT is installed but **not** automatically applied to OpenCode or Node-RED
+agents. The ordinary Docker profile may block Bubblewrap. CADE's scoped,
+host-dependent seccomp/AppArmor profiles are provided as an **explicit opt-in**.
+See [SRT setup, security and limitations](docs/SRT.md) first:
 
 ```sh
-docker compose exec workbench \
-  srt --settings /etc/srt-settings.json echo sandbox-ok
+# Host administrator, manual action (may need repeating after reboot):
+sudo components/workbench/security/load-apparmor.sh
+# Enable the compatibility overlay and test actual enforcement:
+make up-srt
+make verify-srt
 ```
 
-A successful installation does not prove sandbox enforcement. Avoid
-`privileged: true` or globally disabling seccomp just to make SRT start.
+The overlay includes `systempaths=unconfined`, which weakens Docker's built-in
+path masking. Do not use `privileged: true` as a shortcut.
+
+## Version updates (October 10, 2026)
+
+This PR moves to Node.js 24, Node-RED 5.0.8, JupyterLab 4.6.4,
+OpenCode 1.18.35, SRT 0.0.79, code-server 4.141.0, FlowFuse Dashboard
+1.33.0 and node-red-agents 0.4.4. Redis remains on major 7 (7.4.11-alpine).
+These upgrades **require live build/flow compatibility testing**. Back up the
+named home volume before starting upgraded Node-RED with existing flows.
 
 ## Extensions
 
@@ -119,6 +133,9 @@ make ps      # List running containers
 make logs    # Follow workbench logs
 make exec    # Shell inside workbench
 make down    # Stop without deleting persistent volumes
+make config-srt # Validate SRT opt-in Compose overlay
+make up-srt     # Start with host-loaded security profile
+make verify-srt # Check sandbox startup and deny enforcement
 ```
 
 ## Migration from the inline-Dockerfile layout
@@ -128,6 +145,6 @@ This is a file-layout refactor rather than a change in deployment model:
 `scripts/node-red-settings.js` moved into the workbench component, while
 `scripts/srt-settings.json` moved to user-editable `config/`.
 The existing `home` and `redis_data` volumes, container ports, workspace
-mount, and application versions remain unchanged. To revert, check out the
+mount, and application application versions are upgraded as listed above. To revert, check out the
 previous commit and rebuild; do not use `docker compose down -v` unless you
 intend to destroy saved data.

@@ -10,10 +10,57 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate default and Redis profiles
+      - name: Validate default, Redis, and SRT overlay
         run: |
           cp .env.example .env
           docker compose config --quiet
           docker compose --profile redis config --quiet
-      - name: Check startup script syntax
-        run: bash -n components/workbench/start.sh
+          docker compose -f compose.yaml -f compose.srt.yaml config --quiet
+      - name: Validate JSON and scripts
+        run: |
+          python3 -m json.tool config/srt-settings.json >/dev/null
+          python3 -m json.tool components/workbench/security/seccomp-bwrap-userns.json >/dev/null
+          python3 -m json.tool config/node-red/package.json >/dev/null
+          bash -n components/workbench/start.sh
+          bash -n components/workbench/security/load-apparmor.sh
+          bash -n components/workbench/security/verify-srt.sh
+
+  build-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure test defaults
+        run: cp .env.example .env
+      - name: Build workbench
+        run: docker compose build workbench
+      - name: Start workbench
+        run: docker compose up -d --no-build workbench
+      - name: CLI and palette smoke
+        run: |
+          docker compose exec -T workbench sh -ec '
+            node --version
+            jupyter lab --version
+            code-server --version
+            opencode --version
+            command -v srt
+            npm ls --prefix /opt/node-red --depth=0
+          '
+      - name: HTTP smoke
+        run: |
+          for attempt in $(seq 1 60); do
+            if curl -fsS -o /dev/null http://127.0.0.1:8080/ &&
+               curl -fsS -o /dev/null http://127.0.0.1:1880/ &&
+               curl -fsS -o /dev/null "http://127.0.0.1:8888/lab?token=replace-with-a-random-token"; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose logs --tail=120 workbench
+          exit 1
+      - name: Logs
+        if: always()
+        run: docker compose logs --tail=120 workbench
+      - name: Cleanup
+        if: always()
+        run: docker compose down

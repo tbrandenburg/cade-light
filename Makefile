@@ -1,7 +1,7 @@
-.PHONY: help init build up down logs ps exec config
+.PHONY: help init build up down logs ps exec config config-srt up-srt verify-srt
 
 help:
-	@printf '%s\n' 'make init    Create .env from .env.example and workspace/' 'make build   Build the workbench image' 'make up      Build and start the workbench' 'make down    Stop the stack' 'make logs    Follow workbench logs' 'make ps      Show service status' 'make exec    Open a shell in the workbench'
+	@printf '%s\n' 'make init    Create .env from .env.example and workspace/' 'make build   Build the workbench image' 'make up      Build and start the workbench' 'make down    Stop the stack' 'make logs    Follow workbench logs' 'make ps      Show service status' 'make exec    Open a shell in the workbench' 'make config-srt  Validate SRT overlay' 'make up-srt  Run with loaded SRT profiles' 'make verify-srt  Test sandbox enforcement'
 
 init:
 	@test -e .env || cp .env.example .env
@@ -28,3 +28,12 @@ exec:
 
 config:
 	docker compose config --quiet
+
+config-srt:
+	docker compose -f compose.yaml -f compose.srt.yaml config --quiet
+
+up-srt:
+	docker compose -f compose.yaml -f compose.srt.yaml up -d --build
+
+verify-srt:
+	docker compose -f compose.yaml -f compose.srt.yaml exec workbench verify-srt
