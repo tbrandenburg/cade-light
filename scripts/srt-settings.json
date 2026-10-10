@@ -1,0 +1,18 @@
+{
+  "network": {
+    "allowedDomains": [
+      "github.com",
+      "*.github.com",
+      "api.anthropic.com",
+      "api.openai.com",
+      "opencode.ai",
+      "*.opencode.ai"
+    ],
+    "deniedDomains": []
+  },
+  "filesystem": {
+    "denyRead": ["~/.ssh", ".env"],
+    "allowWrite": ["/workspace", "/tmp", "~/.cache", "~/.config"],
+    "denyWrite": [".env"]
+  }
+}
