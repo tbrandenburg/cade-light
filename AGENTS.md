@@ -8,6 +8,26 @@ OpenCode and the optional SRT confinement setup available from the terminal.
 The stack is managed directly with Docker Compose; it does not require a Coder
 control plane or Terraform.
 
+## Folder structure and file roles
+
+| Path | Role |
+| --- | --- |
+| `compose.yaml` | User-facing default stack: selects services and configures ports, environment, profiles, and volumes. |
+| `compose.srt.yaml` | Explicit opt-in overlay for host-dependent SRT confinement. |
+| `components/<name>/` | Reusable service implementation and defaults; keep component-specific build/runtime files with their component. |
+| `components/workbench/security/` | Workbench security profiles, host profile loader, and SRT enforcement check. |
+| `config/` | User-editable application configuration and extra package lists copied or mounted into services. |
+| `docs/` | Longer-form operational guidance, including SRT security implications and setup. |
+| `.github/workflows/` | Repository automation and validation workflows. |
+| `workspace/` | Runtime project files mounted into the workbench; do not put application source or tracked configuration here. |
+
+Keep stack selection and host-specific configuration in the root Compose
+manifests; keep reusable service implementation in `components/`; keep
+user-adjustable application settings in `config/`. Add operational guidance
+under `docs/` and update `README.md` when user-facing configuration or workflow
+changes. Do not add a second deployment/configuration system alongside Docker
+Compose or move runtime data into the source/configuration directories.
+
 ## Make targets
 
 | Target | Purpose |
