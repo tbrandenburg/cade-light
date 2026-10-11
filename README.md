@@ -14,6 +14,8 @@ No Coder control plane or Terraform is required.
 | `.env` (copied from `.env.example`) | Host-specific ports, passwords and tokens. Never commit secrets. |
 | `config/requirements.txt` | Extra Python packages installed into the Jupyter virtual environment on rebuild. |
 | `config/node-red/package.json` | Built-in and additional Node-RED palette nodes installed on rebuild. |
+| `flows/flows.json` | Git-versioned Node-RED flows bundled into the image (default). |
+| `compose.node-red-host-flows.yaml` | Optional read-only local workflow source overlay. |
 | `config/srt-settings.json` | User-editable allowlist and secret-path restrictions for SRT. |
 | `compose.override.yaml` (optional, Git-ignored) | Host-specific Compose overrides. |
 | `compose.srt.yaml` (explicit opt-in) | Select the host-dependent SRT-compatible Docker confinement mode. |
@@ -29,10 +31,13 @@ No Coder control plane or Terraform is required.
 | `components/workbench/security/` | Scoped seccomp/AppArmor profiles, explicit host loader, sandbox smoke test. |
 | `Makefile` | Convenience commands only; not a second configuration language. |
 
-**Runtime data:** `workspace/` contains project files; the named `home` volume
-contains application state and Node-RED flows. Both need backup independently
-of the Git repository. `.env` and `workspace/` are Git-ignored. The Compose
-project name remains `cade-minimal` to preserve the existing volume names.
+**Runtime data:** `workspace/` holds projects; `home` holds shared workbench
+state; the new `node_red_state` volume holds encrypted Node-RED credentials,
+context, runtime metadata and a deployed copy of flow definitions. The source
+of truth for workflows is Git (`flows/flows.json` or an external repo). `.env`,
+`workspace/` and optional host `state/` are Git-ignored. **Existing Node-RED
+users must migrate their previous `.node-red` data from the `home` volume.**
+See [the Node-RED GitOps guide](docs/node-red-gitops.md).
 
 ## Start
 
@@ -87,6 +92,31 @@ OpenCode 1.18.35, SRT 0.0.79, code-server 4.141.0, FlowFuse Dashboard
 These upgrades **require live build/flow compatibility testing**. Back up the
 named home volume before starting upgraded Node-RED with existing flows.
 
+## GitOps Node-RED workflows
+
+By default, this Git repository's `flows/flows.json` is bundled into the
+image. Alternatively configure **an external Git repository** in `.env`:
+
+```dotenv
+NODE_RED_FLOWS_SOURCE=git
+NODE_RED_GIT_URL=https://github.com/example/automations.git
+NODE_RED_GIT_REF=main
+NODE_RED_FLOW_PATH=flows.json
+```
+
+The container fetches the repository itself at startup, resolves the selected
+ref, verifies JSON and stages the file into persistent Node-RED runtime state.
+No host checkout or polling sidecar is required. Pin an exact commit SHA for
+production. Editor changes do **not** push to Git; deploys back up the replaced
+working copy. For a local directory instead, set `NODE_RED_HOST_FLOWS_PATH`
+and use `make up-host-flows` (read-only source mount). Runtime credentials and
+context remain in `node_red_state` by default; optionally set
+`NODE_RED_STATE_STORAGE=./state/node-red` for host-backed state.
+
+**Upgrading an existing workbench requires manual Node-RED data migration.**
+Read [GitOps setup, persistence, security and migration](docs/node-red-gitops.md)
+before switching.
+
 ## Extensions
 
 ### Add a Node-RED palette node
@@ -94,7 +124,7 @@ named home volume before starting upgraded Node-RED with existing flows.
 Add the package and its version to `config/node-red/package.json`, then
 `make up`. This installs packages in `/opt/node-red/node_modules` during the
 image build; `components/workbench/node-red-settings.js` points Node-RED at
-that directory. Existing user flows remain in the `home` volume.
+that directory. Existing user flows and credentials must be migrated from `home` into `node_red_state` (or configured host state directory); see the GitOps guide.
 
 ### Add Python packages
 
@@ -137,6 +167,7 @@ make down    # Stop without deleting persistent volumes
 make config-srt # Validate SRT opt-in Compose overlay
 make up-srt     # Start with host-loaded security profile
 make verify-srt # Check sandbox startup and deny enforcement
+make up-host-flows # Optional host-backed workflow source
 ```
 
 ## Migration from the inline-Dockerfile layout
@@ -145,7 +176,6 @@ This is a file-layout refactor rather than a change in deployment model:
 `compose.yaml` no longer holds the Dockerfile; `scripts/start.sh` and
 `scripts/node-red-settings.js` moved into the workbench component, while
 `scripts/srt-settings.json` moved to user-editable `config/`.
-The existing `home` and `redis_data` volumes, container ports, workspace
-mount, and application application versions are upgraded as listed above. To revert, check out the
+The existing `home` and `redis_data` volumes and application ports are retained, but a new `node_red_state` volume is introduced for Node-RED; migrate existing data before first startup. To revert, check out the
 previous commit and rebuild; do not use `docker compose down -v` unless you
 intend to destroy saved data.

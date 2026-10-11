@@ -12,6 +12,12 @@ services:
       PASSWORD: ${PASSWORD:?Set PASSWORD in .env}
       JUPYTER_TOKEN: ${JUPYTER_TOKEN:?Set JUPYTER_TOKEN in .env}
       NODE_RED_CREDENTIAL_SECRET: ${NODE_RED_CREDENTIAL_SECRET:?Set NODE_RED_CREDENTIAL_SECRET in .env}
+      # Flow definitions: "bundled" (Git-tracked in this repo), "git" (remote),
+      # or "host" (opt-in overlay). No host checkout needed for Git mode.
+      NODE_RED_FLOWS_SOURCE: ${NODE_RED_FLOWS_SOURCE:-bundled}
+      NODE_RED_GIT_URL: ${NODE_RED_GIT_URL:-}
+      NODE_RED_GIT_REF: ${NODE_RED_GIT_REF:-main}
+      NODE_RED_FLOW_PATH: ${NODE_RED_FLOW_PATH:-flows.json}
     ports:
       - "127.0.0.1:${CODE_SERVER_PORT:-8080}:8080"
       - "127.0.0.1:${JUPYTER_PORT:-8888}:8888"
@@ -19,6 +25,9 @@ services:
     volumes:
       - ./workspace:/workspace
       - home:/home/node
+      # Persistent credential/context state, independent of Git definitions.
+      # Override with ./state/node-red to use a host directory instead.
+      - ${NODE_RED_STATE_STORAGE:-node_red_state}:/home/node/.node-red
       - ./config/srt-settings.json:/etc/srt-settings.json:ro
 
   redis:
@@ -31,4 +40,5 @@ services:
 
 volumes:
   home:
+  node_red_state:
   redis_data:

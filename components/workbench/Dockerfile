@@ -4,7 +4,7 @@ FROM node:24-bookworm-slim
 # MAINTAINER-OWNED: how the workbench is built. User package additions live
 # in config/requirements.txt and config/node-red/package.json instead.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      curl git ca-certificates python3 python3-venv bubblewrap socat ripgrep \
+      curl git openssh-client ca-certificates python3 python3-venv bubblewrap socat ripgrep \
     && rm -rf /var/lib/apt/lists/*
 
 RUN python3 -m venv /opt/jupyter \
@@ -26,6 +26,9 @@ RUN curl -fsSL https://code-server.dev/install.sh -o /tmp/install.sh \
     && sh /tmp/install.sh --method=standalone --prefix=/usr/local --version=4.141.0 \
     && rm /tmp/install.sh
 
+# Git-tracked bundled flow source; external Git is fetched at runtime.
+COPY flows/flows.json /opt/cade/bundled-flows/flows.json
+COPY --chmod=755 components/workbench/prepare-node-red-flows.sh /usr/local/bin/prepare-node-red-flows
 COPY components/workbench/node-red-settings.js /etc/node-red/settings.js
 COPY --chmod=755 components/workbench/start.sh /usr/local/bin/start-workbench
 COPY --chmod=755 components/workbench/security/verify-srt.sh /usr/local/bin/verify-srt

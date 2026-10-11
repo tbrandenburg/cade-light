@@ -16,12 +16,18 @@ jobs:
           docker compose config --quiet
           docker compose --profile redis config --quiet
           docker compose -f compose.yaml -f compose.srt.yaml config --quiet
+          docker compose -f compose.yaml -f compose.node-red-host-flows.yaml config --quiet
+          NODE_RED_STATE_STORAGE=./state/node-red docker compose config --quiet
       - name: Validate JSON and scripts
         run: |
           python3 -m json.tool config/srt-settings.json >/dev/null
           python3 -m json.tool components/workbench/security/seccomp-bwrap-userns.json >/dev/null
           python3 -m json.tool config/node-red/package.json >/dev/null
           bash -n components/workbench/start.sh
+          bash -n components/workbench/prepare-node-red-flows.sh
+          bash -n tests/node-red-gitops.sh
+          python3 -m json.tool flows/flows.json >/dev/null
+          bash tests/node-red-gitops.sh
           bash -n components/workbench/security/load-apparmor.sh
           bash -n components/workbench/security/verify-srt.sh
 
@@ -45,6 +51,8 @@ jobs:
             opencode --version
             command -v srt
             npm ls --prefix /opt/node-red --depth=0
+            test -f /home/node/.node-red/flows.json
+            grep -q "^bundled:" /home/node/.node-red/.cade-flow-revision
           '
       - name: HTTP smoke
         run: |
