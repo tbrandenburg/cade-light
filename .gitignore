@@ -2,3 +2,9 @@
 compose.override.yaml
 workspace/*
 !workspace/.gitkeep
+# Optional host-backed Node-RED state.
+state/
+flows/*_cred.json
+flows/.config*
+flows/.flows*.backup
+flows/node_modules/

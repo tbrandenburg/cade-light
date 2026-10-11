@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Prepare the validated, selected flow revision before starting services.
+prepare-node-red-flows
+
 code-server \
   --bind-addr 0.0.0.0:8080 \
   --auth password /workspace &

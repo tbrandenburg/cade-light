@@ -1,0 +1,8 @@
+# Optional local development mode. Not needed for bundled or external Git.
+# docker compose -f compose.yaml -f compose.node-red-host-flows.yaml up -d --build
+services:
+  workbench:
+    environment:
+      NODE_RED_FLOWS_SOURCE: host
+    volumes:
+      - ${NODE_RED_HOST_FLOWS_PATH:-./flows}:/opt/cade/host-flows:ro
